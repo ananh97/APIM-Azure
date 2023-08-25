@@ -1,0 +1,84 @@
+name: exporting api to github repo
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: environment name
+        description: Name of the environment
+
+      apim_name:
+        type: APIM service
+        description: apim service name
+
+      api_name:
+        type: Deployed API
+        description: name of the api to be exported
+
+ 
+
+      api_specification_format:
+        type: specification format of API
+        description: mention the API specification format
+
+jobs:  
+  build-and-deploy:
+    name: build-release
+    runs-on: self-hosted    
+    environment: ${{ inputs.environment }}
+    permissions:
+          contents: read
+          pages: write
+          id-token: write 
+    steps:          
+      # Checkout code
+      - uses: actions/checkout@main
+
+      - name : remove openApi spec from library if present 
+        run: rm /home/etpAdmin/export_spec_libraray/${{ inputs.environment }}/${{ inputs.api_name }}.yaml
+        continue-on-error: true
+
+      - name: login azure poweshell and export the OpenApi
+        shell: pwsh
+        run: |
+          cd /home/etpAdmin
+          $tenantId = ${{ secrets.PW_AZ_TENENT_ID }}
+          $appId = ${{ secrets.PW_AZ_APPID }}
+          $password = ${{ secrets.PW_AZ_PASSWORD }}
+          $securePassword = ConvertTo-SecureString -String $password -AsPlainText -Force
+          $credential = New-Object -TypeName PSCredential -ArgumentList $appId, $securePassword
+          Connect-AzAccount -ServicePrincipal -Tenant $tenantId -Credential $credential
+          Get-AzContext
+          $ApiMgmtContext = New-AzApiManagementContext -ResourceGroupName "etpxapimdata" -ServiceName "${{ inputs.apim_name }}"
+          Export-AzApiManagementApi -Context $ApiMgmtContext -ApiId "${{ inputs.api_name }}" -SpecificationFormat "${{ inputs.api_specification_format }}" -SaveAs "/home/etpAdmin/export_spec_libraray/${{ inputs.environment }}/${{ inputs.api_name }}.yaml"
+
+
+ 
+
+      - name: git commands to add and commit
+        run: |
+          cp /home/etpAdmin/export_spec_libraray/${{ inputs.environment }}/${{ inputs.api_name }}.yaml /home/etpAdmin/api_specs/etpx-apim-open-specs/${{ inputs.environment }}
+          cd /home/etpAdmin/api_specs/etpx-apim-open-specs/${{ inputs.environment }}
+          git add ${{ inputs.api_name }}.yaml
+          git commit -m 'open spec file from APIM'
+          git status
+
+ 
+
+      - name: git add the remote origin and fetch
+        run: |
+          cd /home/etpAdmin/api_specs/etpx-apim-open-specs/${{ inputs.environment }}
+          git remote -v
+          git remote add origin https://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@github.schneider-electric.com/etpx-platform/etpx-apim-open-specs.git
+        continue-on-error: true
+
+      - name: git Checkout branch main
+        run: |
+          cd /home/etpAdmin/api_specs/etpx-apim-open-specs/${{ inputs.environment }}
+          git branch
+
+ 
+
+      - name: push the exported API spec to etpx-apim-open-specs repository
+        run: |
+          cd /home/etpAdmin/api_specs/etpx-apim-open-specs/${{ inputs.environment }}
+          git push https://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@github.schneider-electric.com/etpx-platform/etpx-apim-open-specs.git
